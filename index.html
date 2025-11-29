@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Course Thumbnail Creator</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel for JSX -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        body { background-color: #0f172a; color: white; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useRef, useEffect } = React;
+
+        // --- Icons (Inline SVGs to avoid dependency issues) ---
+        const Icon = ({ children }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-5 h-5">
+                {children}
+            </svg>
+        );
+
+        const Icons = {
+            Upload: () => <Icon><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></Icon>,
+            Download: () => <Icon><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></Icon>,
+            Image: () => <Icon><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></Icon>,
+            Layout: () => <Icon><rect width="18" height="7" x="3" y="3" rx="1"/><rect width="9" height="7" x="3" y="14" rx="1"/><rect width="5" height="7" x="16" y="14" rx="1"/></Icon>,
+            Move: () => <Icon><polyline points="5 9 2 12 5 15"/><polyline points="9 5 12 2 15 5"/><polyline points="19 9 22 12 19 15"/><polyline points="15 19 12 22 9 19"/><line x1="12" y1="2" x2="12" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/></Icon>,
+            Refresh: () => <Icon><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></Icon>
+        };
+
+        // --- Main App Component ---
+        const App = () => {
+            const [image, setImage] = useState(null);
+            const [scale, setScale] = useState(0.95); // Default scale changed to 0.95 (95%)
+            const [blurAmount, setBlurAmount] = useState(20);
+            const [brightness, setBrightness] = useState(0.7);
+            const [layoutMode, setLayoutMode] = useState('center');
+            const [jpgQuality, setJpgQuality] = useState(0.9);
+            
+            const canvasRef = useRef(null);
+            const fileInputRef = useRef(null);
+
+            const CANVAS_WIDTH = 854;
+            const CANVAS_HEIGHT = 480;
+
+            const handleImageUpload = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        const img = new Image();
+                        img.onload = () => setImage(img);
+                        img.src = event.target.result;
+                    };
+                    reader.readAsDataURL(file);
+                }
+            };
+
+            const drawCanvas = () => {
+                const canvas = canvasRef.current;
+                if (!canvas || !image) return;
+                const ctx = canvas.getContext('2d');
+
+                ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+                // Background
+                ctx.save();
+                ctx.fillStyle = '#000000';
+                ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+
+                const scaleFactor = Math.max(CANVAS_WIDTH / image.width, CANVAS_HEIGHT / image.height);
+                const bgW = image.width * scaleFactor;
+                const bgH = image.height * scaleFactor;
+                const bgX = (CANVAS_WIDTH - bgW) / 2;
+                const bgY = (CANVAS_HEIGHT - bgH) / 2;
+
+                ctx.filter = `blur(${blurAmount}px) brightness(${brightness})`;
+                ctx.drawImage(image, bgX, bgY, bgW, bgH);
+                ctx.restore();
+
+                // Foreground
+                ctx.save();
+                const imgAspect = image.width / image.height;
+                const fgH = CANVAS_HEIGHT * scale;
+                const fgW = fgH * imgAspect;
+                
+                let fgX, fgY;
+                if (layoutMode === 'center') {
+                    fgX = (CANVAS_WIDTH - fgW) / 2;
+                } else if (layoutMode === 'split-left') {
+                    fgX = (CANVAS_WIDTH * 0.25) - (fgW / 2);
+                } else {
+                    fgX = (CANVAS_WIDTH * 0.75) - (fgW / 2);
+                }
+                fgY = (CANVAS_HEIGHT - fgH) / 2;
+
+                // Shadow
+                ctx.shadowColor = 'rgba(0,0,0,0.6)';
+                ctx.shadowBlur = 30;
+                ctx.shadowOffsetX = 0;
+                ctx.shadowOffsetY = 15;
+                ctx.drawImage(image, fgX, fgY, fgW, fgH);
+                
+                // Border
+                ctx.shadowColor = 'transparent';
+                ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+                ctx.lineWidth = 1;
+                ctx.strokeRect(fgX, fgY, fgW, fgH);
+                ctx.restore();
+            };
+
+            useEffect(() => {
+                if (image) {
+                    drawCanvas();
+                } else {
+                    // Placeholder Draw
+                    const canvas = canvasRef.current;
+                    const ctx = canvas.getContext('2d');
+                    ctx.fillStyle = '#1e293b'; // slate-800
+                    ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+                }
+            }, [image, scale, blurAmount, brightness, layoutMode, jpgQuality]); // Added jpgQuality dependency
+
+            const handleDownload = () => {
+                const canvas = canvasRef.current;
+                if (canvas) {
+                    const link = document.createElement('a');
+                    link.download = 'course-thumbnail.jpg';
+                    link.href = canvas.toDataURL('image/jpeg', jpgQuality);
+                    link.click();
+                }
+            };
+
+            return (
+                <div className="flex flex-col items-center justify-center min-h-screen bg-slate-900 p-4 font-sans text-slate-100">
+                    <div className="bg-slate-800 p-6 rounded-xl shadow-2xl w-full max-w-4xl border border-slate-700">
+                        <div className="flex justify-between items-center mb-6 border-b border-slate-700 pb-4">
+                            <h1 className="text-xl font-bold text-white flex items-center gap-2">
+                                <span className="text-blue-400"><Icons.Image /></span>
+                                Thumbnail Maker
+                            </h1>
+                            
+                            <div className="flex gap-3">
+                                {!image && (
+                                    <button onClick={() => fileInputRef.current.click()} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg transition-colors font-medium">
+                                        <Icons.Upload /> Upload Cover
+                                    </button>
+                                )}
+                                {image && (
+                                    <button onClick={handleDownload} className="flex items-center gap-2 bg-green-600 hover:bg-green-500 text-white px-6 py-2 rounded-lg transition-colors shadow-lg font-bold">
+                                        <Icons.Download /> Download JPG
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="flex flex-col lg:flex-row gap-8">
+                            {/* Controls */}
+                            <div className="w-full lg:w-1/3 space-y-6 order-2 lg:order-1">
+                                <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
+
+                                <div className="bg-slate-700/50 p-4 rounded-lg border border-slate-600">
+                                    <h3 className="font-semibold mb-4 flex items-center gap-2 text-slate-300 text-sm uppercase tracking-wide">
+                                        <Icons.Move /> Adjustments
+                                    </h3>
+                                    <div className="space-y-5">
+                                        {[
+                                            { label: "Scale", val: scale, set: setScale, min: 0.5, max: 1.1, step: 0.01 },
+                                            { label: "Blur", val: blurAmount, set: setBlurAmount, min: 0, max: 50, step: 1 },
+                                            { label: "Dim", val: brightness, set: setBrightness, min: 0.2, max: 1, step: 0.05 },
+                                            { label: "Quality", val: jpgQuality, set: setJpgQuality, min: 0.1, max: 1.0, step: 0.1 }
+                                        ].map((ctl, i) => (
+                                            <div key={i}>
+                                                <div className="flex justify-between mb-1">
+                                                    <label className="text-xs font-medium text-slate-400">{ctl.label}</label>
+                                                    {/* Display percentage for Scale and Quality */}
+                                                    {(ctl.label === "Scale" || ctl.label === "Quality") && (
+                                                        <span className="text-xs text-slate-400">{Math.round(ctl.val * 100)}%</span>
+                                                    )}
+                                                </div>
+                                                <input type="range" min={ctl.min} max={ctl.max} step={ctl.step} value={ctl.val} onChange={(e) => ctl.set(parseFloat(e.target.value))} className="w-full h-2 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-blue-500" />
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                <div className="bg-slate-700/50 p-4 rounded-lg border border-slate-600">
+                                    <h3 className="font-semibold mb-4 flex items-center gap-2 text-slate-300 text-sm uppercase tracking-wide">
+                                        <Icons.Layout /> Position
+                                    </h3>
+                                    <div className="flex gap-2">
+                                        {['split-left', 'center', 'split-right'].map(mode => (
+                                            <button key={mode} onClick={() => setLayoutMode(mode)} className={`flex-1 py-2 text-xs font-bold rounded transition-all ${layoutMode === mode ? 'bg-blue-600 text-white' : 'bg-slate-600 text-slate-300 hover:bg-slate-500'}`}>
+                                                {mode.replace('split-', '').toUpperCase()}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {image && (
+                                    <button onClick={() => { setScale(0.95); setBlurAmount(20); setBrightness(0.7); setLayoutMode('center'); setJpgQuality(0.9); }} className="w-full flex items-center justify-center gap-2 text-slate-400 hover:text-white text-xs py-2 uppercase tracking-wider">
+                                        <Icons.Refresh /> Reset
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* Preview */}
+                            <div className="w-full lg:w-2/3 order-1 lg:order-2 flex flex-col items-center pt-4">
+                                <div className="relative shadow-2xl rounded-sm overflow-hidden bg-black ring-4 ring-black">
+                                    <canvas ref={canvasRef} width={CANVAS_WIDTH} height={CANVAS_HEIGHT} className="max-w-full h-auto block" style={{ maxHeight: '60vh' }} />
+                                    {!image && (
+                                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                            <div className="text-center p-6 bg-black/50 rounded-xl backdrop-blur-sm">
+                                                <div className="text-slate-400 mb-2"><Icons.Upload /></div>
+                                                <p className="text-white font-medium">Please Upload Image</p>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="mt-4 flex gap-4 text-xs text-slate-500 font-mono">
+                                    <span>RES: 854x480px</span>•<span>JPG</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
